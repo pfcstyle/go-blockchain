@@ -4,6 +4,7 @@
 *.dll
 *.so
 *.dylib
+*.db
 
 # Test binary, built with `go test -c`
 *.test
@@ -21,4 +22,3 @@ __debug_bin
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
-/.idea/

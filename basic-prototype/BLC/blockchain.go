@@ -5,6 +5,7 @@ import (
 	"github.com/boltdb/bolt"
 	"log"
 	"math/big"
+	"time"
 )
 
 // 数据库名字
@@ -18,50 +19,74 @@ type Blockchain struct {
 	DB  *bolt.DB
 }
 
-// 遍历输出所有区块的信息
-func (blc *Blockchain) Printchain() {
+type BlockchainIterator struct {
+	CurrentHash []byte
+	DB          *bolt.DB
+}
+
+func (blockchainIterator *BlockchainIterator) Next() *Block {
 
 	var block *Block
 
-	var currentHash []byte = blc.Tip
+	err := blockchainIterator.DB.View(func(tx *bolt.Tx) error {
+
+		b := tx.Bucket([]byte(blockTableName))
+
+		if b != nil {
+			currentBlockBytes := b.Get(blockchainIterator.CurrentHash)
+			//  获取到当前迭代器里面的currentHash所对应的区块
+			block = DeserializeBlock(currentBlockBytes)
+
+			// 更新迭代器里面CurrentHash
+			blockchainIterator.CurrentHash = block.PrevBlockHash
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		log.Panic(err)
+	}
+
+	return block
+
+}
+
+// 迭代器
+func (blockchain *Blockchain) Iterator() *BlockchainIterator {
+
+	return &BlockchainIterator{blockchain.Tip, blockchain.DB}
+}
+
+// 遍历输出所有区块的信息
+func (blc *Blockchain) Printchain() {
+
+	blockchainIterator := blc.Iterator()
 
 	for {
-		err := blc.DB.View(func(tx *bolt.Tx) error {
+		block := blockchainIterator.Next()
 
-			//1. 表
-			b := tx.Bucket([]byte(blockTableName))
-			if b != nil {
-				// 获取当前区块的字节数组
-				blockBytes := b.Get(currentHash)
-				// 反序列化
-				block = DeserializeBlock(blockBytes)
-
-				fmt.Printf("Height：%d\n", block.Height)
-				fmt.Printf("PrevBlockHash：%x\n", block.PrevBlockHash)
-				fmt.Printf("Data：%s\n", block.Data)
-				fmt.Printf("Timestamp：%d\n", block.Timestamp)
-				fmt.Printf("Hash：%x\n", block.Hash)
-				fmt.Printf("Nonce：%d\n", block.Nonce)
-
-			}
-
-			return nil
-		})
+		fmt.Printf("Height：%d\n", block.Height)
+		fmt.Printf("PrevBlockHash：%x\n", block.PrevBlockHash)
+		fmt.Printf("Data：%s\n", block.Data)
+		fmt.Printf("Timestamp：%s\n", time.Unix(block.Timestamp, 0).Format("2006-01-02 03:04:05 PM"))
+		fmt.Printf("Hash：%x\n", block.Hash)
+		fmt.Printf("Nonce：%d\n", block.Nonce)
 
 		fmt.Println()
-
-		if err != nil {
-			log.Panic(err)
-		}
 
 		var hashInt big.Int
 		hashInt.SetBytes(block.PrevBlockHash)
 
+		// Cmp compares x and y and returns:
+		//
+		//   -1 if x <  y
+		//    0 if x == y
+		//   +1 if x >  y
+
 		if big.NewInt(0).Cmp(&hashInt) == 0 {
 			break
 		}
-
-		currentHash = block.PrevBlockHash
 	}
 
 }
