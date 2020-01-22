@@ -22,7 +22,7 @@ func (pow *ProofOfWork) prepareData(nonce int) []byte {
 	data := bytes.Join(
 		[][]byte{
 			pow.Block.PrevBlockHash,
-			pow.Block.Data,
+			pow.Block.HashTransactions(),
 			IntToHex(pow.Block.Timestamp),
 			IntToHex(int64(targetBit)),
 			IntToHex(int64(nonce)),
@@ -32,27 +32,6 @@ func (pow *ProofOfWork) prepareData(nonce int) []byte {
 	)
 
 	return data
-}
-
-func (proofOfWork *ProofOfWork) IsValid() bool {
-
-	//1.proofOfWork.Block.Hash
-	//2.proofOfWork.Target
-
-	var hashInt big.Int
-	// []byte 转 Int
-	hashInt.SetBytes(proofOfWork.Block.Hash)
-
-	// Cmp compares x and y and returns:
-	//
-	//   -1 if x <  y
-	//    0 if x == y
-	//   +1 if x >  y
-	if proofOfWork.target.Cmp(&hashInt) == 1 {
-		return true
-	}
-
-	return false
 }
 
 func (proofOfWork *ProofOfWork) Run() ([]byte, int64) {

@@ -19,9 +19,9 @@ func (blockchainIterator *BlockchainIterator) Next() *Block {
 		b := tx.Bucket([]byte(blockTableName))
 
 		if b != nil {
-			currentBlockBytes := b.Get(blockchainIterator.CurrentHash)
+			currentBloclBytes := b.Get(blockchainIterator.CurrentHash)
 			//  获取到当前迭代器里面的currentHash所对应的区块
-			block = DeserializeBlock(currentBlockBytes)
+			block = DeserializeBlock(currentBloclBytes)
 
 			// 更新迭代器里面CurrentHash
 			blockchainIterator.CurrentHash = block.PrevBlockHash
@@ -36,10 +36,4 @@ func (blockchainIterator *BlockchainIterator) Next() *Block {
 
 	return block
 
-}
-
-// 迭代器
-func (blockchain *Blockchain) Iterator() *BlockchainIterator {
-
-	return &BlockchainIterator{blockchain.Tip, blockchain.DB}
 }
