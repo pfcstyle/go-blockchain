@@ -5,6 +5,7 @@ import (
 	"github.com/boltdb/bolt"
 	"log"
 	"math/big"
+	"os"
 	"time"
 )
 
@@ -17,6 +18,15 @@ const blockTableName = "blocks"
 type Blockchain struct {
 	Tip []byte //最新的区块的Hash
 	DB  *bolt.DB
+}
+
+// 判断数据库是否存在
+func dbExists() bool {
+	if _, err := os.Stat(dbName); os.IsNotExist(err) {
+		return false
+	}
+
+	return true
 }
 
 // 遍历输出所有区块的信息
@@ -53,7 +63,7 @@ func (blc *Blockchain) Printchain() {
 }
 
 //CreateBlockchainWithGenesisBlock 创建带有创世区块的区块链
-func CreateBlockchainWithGenesisBlock() *Blockchain {
+func CreateBlockchainWithGenesisBlock(data string) *Blockchain {
 	// 创建或者打开数据库
 	db, err := bolt.Open(dbName, 0600, nil)
 	if err != nil {
@@ -75,10 +85,10 @@ func CreateBlockchainWithGenesisBlock() *Blockchain {
 				log.Panic(err)
 			}
 		}
-
-		if b != nil {
+		blockHash = b.Get([]byte("l"))
+		if blockHash == nil { //无创世区块
 			// 创建创世区块
-			genesisBlock := CreateGenesisBlock("Genesis Data.......")
+			genesisBlock := CreateGenesisBlock(data)
 			// 将创世区块存储到表中
 			err := b.Put(genesisBlock.Hash, genesisBlock.Serialize())
 			if err != nil {
@@ -90,8 +100,10 @@ func CreateBlockchainWithGenesisBlock() *Blockchain {
 			if err != nil {
 				log.Panic(err)
 			}
-
 			blockHash = genesisBlock.Hash
+		} else {
+			fmt.Println("创世区块已经存在.......")
+			os.Exit(1)
 		}
 
 		return nil
@@ -135,4 +147,30 @@ func (blc *Blockchain) AddBlockToBlockchain(data string) {
 	if err != nil {
 		log.Panic(err)
 	}
+}
+
+// 返回Blockchain对象
+func BlockchainObject() *Blockchain {
+
+	db, err := bolt.Open(dbName, 0600, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var tip []byte
+
+	err = db.View(func(tx *bolt.Tx) error {
+
+		b := tx.Bucket([]byte(blockTableName))
+
+		if b != nil {
+			// 读取最新区块的Hash
+			tip = b.Get([]byte("l"))
+
+		}
+
+		return nil
+	})
+
+	return &Blockchain{tip, db}
 }
