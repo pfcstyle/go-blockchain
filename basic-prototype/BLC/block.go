@@ -9,19 +9,18 @@ import (
 	"time"
 )
 
-//Block prototype
 type Block struct {
-	//1.区块高度
+	//1. 区块高度
 	Height int64
-	//2.上一个区块hash
+	//2. 上一个区块HASH
 	PrevBlockHash []byte
 	//3. 交易数据
 	Txs []*Transaction
-	//4.时间戳
+	//4. 时间戳
 	Timestamp int64
-	//5.Hash
+	//5. Hash
 	Hash []byte
-	//6.Nonce
+	// 6. Nonce
 	Nonce int64
 }
 
