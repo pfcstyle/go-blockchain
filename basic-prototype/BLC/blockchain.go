@@ -1,6 +1,8 @@
 package BLC
 
 import (
+	"bytes"
+	"crypto/ecdsa"
 	"encoding/hex"
 	"fmt"
 	"github.com/boltdb/bolt"
@@ -29,13 +31,13 @@ func (blockchain *Blockchain) Iterator() *BlockchainIterator {
 }
 
 // 判断数据库是否存在
-//func DBExists() bool {
-//	if _, err := os.Stat(dbName); os.IsNotExist(err) {
-//		return false
-//	}
-//
-//	return true
-//}
+func DBExists() bool {
+	if _, err := os.Stat(dbName); os.IsNotExist(err) {
+		return false
+	}
+
+	return true
+}
 
 // 遍历输出所有区块的信息
 func (blc *Blockchain) Printchain() {
@@ -59,13 +61,15 @@ func (blc *Blockchain) Printchain() {
 			for _, in := range tx.Vins {
 				fmt.Printf("%x\n", in.TxHash)
 				fmt.Printf("%d\n", in.Vout)
-				fmt.Printf("%s\n", in.ScriptSig)
+				fmt.Printf("%x\n", in.PublicKey)
 			}
 
 			fmt.Println("Vouts:")
 			for _, out := range tx.Vouts {
-				fmt.Println(out.Value)
-				fmt.Println(out.ScriptPubKey)
+				//fmt.Println(out.Value)
+				fmt.Printf("%d\n", out.Value)
+				//fmt.Println(out.Ripemd160Hash)
+				fmt.Printf("%x\n", out.Ripemd160Hash)
 			}
 		}
 
@@ -125,34 +129,40 @@ func (blc *Blockchain) AddBlockToBlockchain(txs []*Transaction) {
 	}
 }
 
-//CreateBlockchainWithGenesisBlock 创建带有创世区块的区块链
+//1. 创建带有创世区块的区块链
 func CreateBlockchainWithGenesisBlock(address string) *Blockchain {
+
+	// 判断数据库是否存在
+	if DBExists() {
+		fmt.Println("创世区块已经存在.......")
+		os.Exit(1)
+	}
+
+	fmt.Println("正在创建创世区块.......")
+
 	// 创建或者打开数据库
 	db, err := bolt.Open(dbName, 0600, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	var blockHash []byte
+	var genesisHash []byte
 
+	// 关闭数据库
 	err = db.Update(func(tx *bolt.Tx) error {
 
-		//  获取表
-		b := tx.Bucket([]byte(blockTableName))
+		// 创建数据库表
+		b, err := tx.CreateBucket([]byte(blockTableName))
 
-		if b == nil {
-			// 创建数据库表
-			b, err = tx.CreateBucket([]byte(blockTableName))
-
-			if err != nil {
-				log.Panic(err)
-			}
+		if err != nil {
+			log.Panic(err)
 		}
-		blockHash = b.Get([]byte("l"))
-		if blockHash == nil { //无创世区块
+
+		if b != nil {
 			// 创建创世区块
 			// 创建了一个coinbase Transaction
 			txCoinbase := NewCoinbaseTransaction(address)
+
 			genesisBlock := CreateGenesisBlock([]*Transaction{txCoinbase})
 			// 将创世区块存储到表中
 			err := b.Put(genesisBlock.Hash, genesisBlock.Serialize())
@@ -165,16 +175,15 @@ func CreateBlockchainWithGenesisBlock(address string) *Blockchain {
 			if err != nil {
 				log.Panic(err)
 			}
-			blockHash = genesisBlock.Hash
-		} else {
-			fmt.Println("创世区块已经存在.......")
-			os.Exit(1)
+
+			genesisHash = genesisBlock.Hash
 		}
 
 		return nil
 	})
-	println("创建blockchain成功")
-	return &Blockchain{blockHash, db}
+
+	return &Blockchain{genesisHash, db}
+
 }
 
 // 返回Blockchain对象
@@ -217,7 +226,10 @@ func (blockchain *Blockchain) UnUTXOs(address string, txs []*Transaction) []*UTX
 		if tx.IsCoinbaseTransaction() == false {
 			for _, in := range tx.Vins {
 				//是否能够解锁
-				if in.UnLockWithAddress(address) {
+				publicKeyHash := Base58Decode([]byte(address))
+
+				ripemd160Hash := publicKeyHash[1 : len(publicKeyHash)-4]
+				if in.UnLockRipemd160Hash(ripemd160Hash) {
 
 					key := hex.EncodeToString(in.TxHash)
 
@@ -230,7 +242,7 @@ func (blockchain *Blockchain) UnUTXOs(address string, txs []*Transaction) []*UTX
 
 	for _, tx := range txs {
 
-	Work1: //类似于goto sig
+	Work1:
 		for index, out := range tx.Vouts {
 
 			if out.UnLockScriptPubKeyWithAddress(address) {
@@ -255,7 +267,7 @@ func (blockchain *Blockchain) UnUTXOs(address string, txs []*Transaction) []*UTX
 
 								if index == outIndex {
 									isUnSpentUTXO = true
-									continue Work1 //continue to Work1
+									continue Work1
 								}
 
 								if isUnSpentUTXO == false {
@@ -293,7 +305,11 @@ func (blockchain *Blockchain) UnUTXOs(address string, txs []*Transaction) []*UTX
 			if tx.IsCoinbaseTransaction() == false {
 				for _, in := range tx.Vins {
 					//是否能够解锁
-					if in.UnLockWithAddress(address) {
+					publicKeyHash := Base58Decode([]byte(address))
+
+					ripemd160Hash := publicKeyHash[1 : len(publicKeyHash)-4]
+
+					if in.UnLockRipemd160Hash(ripemd160Hash) {
 
 						key := hex.EncodeToString(in.TxHash)
 
@@ -415,18 +431,20 @@ func (blockchain *Blockchain) MineNewBlock(from []string, to []string, amount []
 
 	//1.建立一笔交易
 
-	fmt.Println(from)
-	fmt.Println(to)
-	fmt.Println(amount)
+	utxoSet := &UTXOSet{blockchain}
 
 	var txs []*Transaction
 
 	for index, address := range from {
 		value, _ := strconv.Atoi(amount[index])
-		tx := NewSimpleTransaction(address, to[index], value, blockchain, txs)
+		tx := NewSimpleTransaction(address, to[index], int64(value), utxoSet, txs)
 		txs = append(txs, tx)
 		//fmt.Println(tx)
 	}
+
+	//奖励
+	tx := NewCoinbaseTransaction(from[0])
+	txs = append(txs, tx)
 
 	//1. 通过相关算法建立Transaction数组
 	var block *Block
@@ -446,6 +464,19 @@ func (blockchain *Blockchain) MineNewBlock(from []string, to []string, amount []
 
 		return nil
 	})
+
+	// 在建立新区块之前对txs进行签名验证
+
+	_txs := []*Transaction{}
+
+	for _, tx := range txs {
+
+		if blockchain.VerifyTransaction(tx, _txs) != true {
+			log.Panic("ERROR: Invalid transaction")
+		}
+
+		_txs = append(_txs, tx)
+	}
 
 	//2. 建立新的区块
 	block = NewBlock(txs, block.Height+1, block.Hash)
@@ -480,6 +511,163 @@ func (blockchain *Blockchain) GetBalance(address string) int64 {
 	}
 
 	return amount
+}
+
+func (bclockchain *Blockchain) SignTransaction(tx *Transaction, privKey ecdsa.PrivateKey, txs []*Transaction) {
+
+	if tx.IsCoinbaseTransaction() {
+		return
+	}
+
+	prevTXs := make(map[string]Transaction)
+
+	for _, vin := range tx.Vins {
+		prevTX, err := bclockchain.FindTransaction(vin.TxHash, txs)
+		if err != nil {
+			log.Panic(err)
+		}
+		prevTXs[hex.EncodeToString(prevTX.TxHash)] = prevTX
+	}
+
+	tx.Sign(privKey, prevTXs)
+
+}
+
+func (bc *Blockchain) FindTransaction(ID []byte, txs []*Transaction) (Transaction, error) {
+
+	for _, tx := range txs {
+		if bytes.Compare(tx.TxHash, ID) == 0 {
+			return *tx, nil
+		}
+	}
+
+	bci := bc.Iterator()
+
+	for {
+		block := bci.Next()
+
+		for _, tx := range block.Txs {
+			if bytes.Compare(tx.TxHash, ID) == 0 {
+				return *tx, nil
+			}
+		}
+
+		var hashInt big.Int
+		hashInt.SetBytes(block.PrevBlockHash)
+
+		if big.NewInt(0).Cmp(&hashInt) == 0 {
+			break
+		}
+	}
+
+	return Transaction{}, nil
+}
+
+// 验证数字签名
+func (bc *Blockchain) VerifyTransaction(tx *Transaction, txs []*Transaction) bool {
+
+	prevTXs := make(map[string]Transaction)
+
+	for _, vin := range tx.Vins {
+		prevTX, err := bc.FindTransaction(vin.TxHash, txs)
+		if err != nil {
+			log.Panic(err)
+		}
+		prevTXs[hex.EncodeToString(prevTX.TxHash)] = prevTX
+	}
+
+	return tx.Verify(prevTXs)
+}
+
+// [string]*TXOutputs
+func (blc *Blockchain) FindUTXOMap() map[string]*TXOutputs {
+
+	blcIterator := blc.Iterator()
+
+	// 存储已花费的UTXO的信息
+	spentableUTXOsMap := make(map[string][]*TXInput)
+
+	utxoMaps := make(map[string]*TXOutputs)
+
+	for {
+		block := blcIterator.Next()
+
+		for i := len(block.Txs) - 1; i >= 0; i-- {
+
+			txOutputs := &TXOutputs{[]*UTXO{}}
+
+			tx := block.Txs[i]
+
+			// coinbase
+			if tx.IsCoinbaseTransaction() == false {
+				for _, txInput := range tx.Vins {
+
+					txHash := hex.EncodeToString(txInput.TxHash)
+					spentableUTXOsMap[txHash] = append(spentableUTXOsMap[txHash], txInput)
+
+				}
+			}
+
+			txHash := hex.EncodeToString(tx.TxHash)
+
+		WorkOutLoop:
+			for index, out := range tx.Vouts {
+
+				if tx.IsCoinbaseTransaction() {
+
+					fmt.Println("IsCoinbaseTransaction")
+					fmt.Println(out)
+					fmt.Println(txHash)
+				}
+
+				txInputs := spentableUTXOsMap[txHash]
+
+				if len(txInputs) > 0 {
+
+					isSpent := false
+
+					for _, in := range txInputs {
+
+						outPublicKey := out.Ripemd160Hash
+						inPublicKey := in.PublicKey
+
+						if bytes.Compare(outPublicKey, Ripemd160Hash(inPublicKey)) == 0 {
+							if index == in.Vout {
+								isSpent = true
+								continue WorkOutLoop
+							}
+						}
+
+					}
+
+					if isSpent == false {
+						utxo := &UTXO{tx.TxHash, index, out}
+						txOutputs.UTXOS = append(txOutputs.UTXOS, utxo)
+					}
+
+				} else {
+					utxo := &UTXO{tx.TxHash, index, out}
+					txOutputs.UTXOS = append(txOutputs.UTXOS, utxo)
+				}
+
+			}
+
+			// 设置键值对
+			utxoMaps[txHash] = txOutputs
+
+		}
+
+		// 找到创世区块时退出
+		var hashInt big.Int
+		hashInt.SetBytes(block.PrevBlockHash)
+
+		if hashInt.Cmp(big.NewInt(0)) == 0 {
+			break
+		}
+
+	}
+
+	return utxoMaps
 }
 
 // 判断是否已经有区块
