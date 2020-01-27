@@ -131,7 +131,6 @@ func (utxoSet *UTXOSet) FindUnPackageSpendableUTXOS(from string, txs []*Transact
 		for index, out := range tx.Vouts {
 
 			if out.UnLockScriptPubKeyWithAddress(from) {
-				fmt.Println("看看是否是俊诚...")
 				fmt.Println(from)
 
 				fmt.Println(spentTXOutputs)

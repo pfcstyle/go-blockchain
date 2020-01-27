@@ -2,7 +2,6 @@ package BLC
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/gob"
 	"fmt"
 	"log"
@@ -27,15 +26,24 @@ type Block struct {
 // 需要将Txs转换成[]byte
 func (block *Block) HashTransactions() []byte {
 
-	var txHashes [][]byte
-	var txHash [32]byte
+	//var txHashes [][]byte
+	//var txHash [32]byte
+	//
+	//for _, tx := range block.Txs {
+	//	txHashes = append(txHashes, tx.TxHash)
+	//}
+	//txHash = sha256.Sum256(bytes.Join(txHashes, []byte{}))
+	//
+	//return txHash[:]
+
+	var transactions [][]byte
 
 	for _, tx := range block.Txs {
-		txHashes = append(txHashes, tx.TxHash)
+		transactions = append(transactions, tx.Serialize())
 	}
-	txHash = sha256.Sum256(bytes.Join(txHashes, []byte{}))
+	mTree := NewMerkleTree(transactions)
 
-	return txHash[:]
+	return mTree.RootNode.Data
 
 }
 

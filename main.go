@@ -1,7 +1,7 @@
 package main
 
 import (
-	"go-blockchain/basic-prototype/BLC"
+	"go-blockchain/BLC"
 )
 
 func main() {
