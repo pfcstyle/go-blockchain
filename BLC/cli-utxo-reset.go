@@ -1,10 +1,6 @@
 package BLC
 
-import "fmt"
-
-func (cli *CLI) TestMethod() {
-
-	fmt.Println("TestMethod")
+func (cli *CLI) resetUTXOSet() {
 
 	blockchain := BlockchainObject()
 
@@ -14,5 +10,4 @@ func (cli *CLI) TestMethod() {
 
 	utxoSet.ResetUTXOSet()
 
-	//fmt.Println(blockchain.FindUTXOMap())
 }
